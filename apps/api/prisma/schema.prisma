@@ -1,0 +1,203 @@
+// BuyWise Prisma schema
+// Datasource: PostgreSQL (optional — app works without DATABASE_URL in demo mode)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Users ──────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  googleId  String   @unique
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  preference      UserPreference?
+  researchSessions ResearchSession[]
+  savedProducts   SavedProduct[]
+  priceWatches    PriceWatch[]
+
+  @@index([email])
+}
+
+model UserPreference {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultCurrency  String   @default("INR")
+  priorities       Json     @default("[]")  // Array of Priority objects
+  brandAffinity    String   @default("low")
+  budgetSensitivity String  @default("medium")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ── Products ──────────────────────────────────────────────────────────────
+
+model Product {
+  id            String   @id @default(uuid())
+  canonicalName String
+  brand         String
+  model         String
+  category      String
+  imageUrl      String
+  releaseYear   Int
+  specs         Json
+  attributes    Json     // Normalized 0-100 per dimension
+  features      Json     @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  offers            ProductOffer[]
+  reviews           ProductReview?
+  priceHistory      PriceHistory[]
+  savedBy           SavedProduct[]
+  priceWatches      PriceWatch[]
+  recommendations   RecommendationProduct[]
+
+  @@unique([brand, model])
+  @@index([category])
+  @@index([brand])
+}
+
+model Retailer {
+  id        String         @id @default(uuid())
+  name      String         @unique
+  domain    String
+  createdAt DateTime       @default(now())
+
+  offers    ProductOffer[]
+}
+
+model ProductOffer {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  retailerId  String
+  retailer    Retailer @relation(fields: [retailerId], references: [id])
+  price       Float
+  currency    String   @default("INR")
+  url         String
+  inStock     Boolean  @default(true)
+  condition   String   @default("new")
+  fetchedAt   DateTime @default(now())
+
+  @@index([productId])
+  @@index([retailerId])
+}
+
+model ProductReview {
+  id             String   @id @default(uuid())
+  productId      String   @unique
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sources        Json     @default("[]")
+  totalCount     Int      @default(0)
+  averageRating  Float
+  sentiment      Json     // { positive, neutral, negative }
+  pros           Json     @default("[]")
+  cons           Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model PriceHistory {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  date      DateTime
+  price     Float
+  currency  String   @default("INR")
+
+  @@index([productId, date])
+}
+
+// ── Research ──────────────────────────────────────────────────────────────
+
+model ResearchSession {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  query       String
+  category    String
+  resultJson  Json     // Full ResearchResult serialized
+  createdAt   DateTime @default(now())
+
+  requirements    ResearchRequirement[]
+  recommendations Recommendation[]
+
+  @@index([userId, createdAt])
+  @@index([category])
+}
+
+model ResearchRequirement {
+  id        String          @id @default(uuid())
+  sessionId String
+  session   ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  data      Json            // Requirements object
+
+  @@index([sessionId])
+}
+
+model Recommendation {
+  id        String          @id @default(uuid())
+  sessionId String
+  session   ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId String
+  score     Float
+  reasonsJson Json          @default("[]")
+  createdAt DateTime        @default(now())
+
+  products  RecommendationProduct[]
+
+  @@index([sessionId])
+}
+
+model RecommendationProduct {
+  id               String         @id @default(uuid())
+  recommendationId String
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  role             String         // "winner" | "alternative-value" | "alternative-performance" etc.
+
+  @@index([recommendationId])
+  @@index([productId])
+}
+
+// ── User actions ──────────────────────────────────────────────────────────
+
+model SavedProduct {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId])
+}
+
+model PriceWatch {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  targetPrice Float
+  status      String   @default("active") // "active" | "triggered" | "cancelled"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([productId, status])
+}
